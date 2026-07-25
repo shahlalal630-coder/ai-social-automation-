@@ -2,14 +2,12 @@ name: Scheduled AI Social Media Agent
 
 on:
   schedule:
-    # Runs 3 times daily (08:00, 14:00, 20:00 UTC)
     - cron: '0 8,14,20 * * *'
-  workflow_dispatch: # Allows manual trigger from GitHub UI
+  workflow_dispatch:
 
 jobs:
   run-automation:
     runs-on: ubuntu-latest
-
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
