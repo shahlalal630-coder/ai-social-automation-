@@ -22,12 +22,42 @@ def generate_content_with_retry(gemini_client, max_retries: int = 3):
     # Model name is configurable so future Google deprecations are a secret change,
     # not a code edit. gemini-2.5-flash was retired for new API keys.
     model_name = os.environ.get("GEMINI_MODEL", "gemini-3.5-flash")
+
+    # What the business actually sells. Edit this (or set the BUSINESS_CONTEXT
+    # secret) to change the product the posts advertise.
+    business_context = os.environ.get(
+        "BUSINESS_CONTEXT",
+        "AI-powered customer reply automation for small and medium businesses. "
+        "It instantly answers customer messages on Facebook, Instagram and WhatsApp "
+        "24/7, so a business never misses a lead, replies within seconds, recovers "
+        "sales lost to slow replies, and does it all without hiring extra staff.",
+    )
+
     prompt = (
-        "Generate a high-converting, modern social media post suitable for Instagram and Facebook.\n"
-        "Return STRICTLY valid JSON with no extra markdown wrapping:\n"
+        "You are a senior performance-marketing copywriter and art director creating a "
+        "high-CTR paid social ad (Instagram + Facebook) for this business:\n"
+        f"BUSINESS: {business_context}\n\n"
+        "Write the CAPTION in BANGLA (Bengali script). The caption must:\n"
+        "- Open with a strong scroll-stopping HOOK naming a real pain point the business "
+        "owner feels (e.g. missed messages, slow replies, lost customers at night, staff cost).\n"
+        "- Clearly explain WHY automated customer reply is needed for their specific business "
+        "and the concrete BENEFITS (more sales, faster response, 24/7, no missed leads).\n"
+        "- Sound persuasive and modern, use a few relevant emojis, short punchy lines.\n"
+        "- End with a clear Bangla call-to-action (e.g. message/comment to get started).\n"
+        "- Include 6-8 relevant hashtags (mix of Bangla and English business hashtags).\n\n"
+        "Write the IMAGE_PROMPT in ENGLISH (image models understand English best). It must "
+        "describe a polished, ad-style, high-CTR visual that VISUALLY tells a before/after or "
+        "problem->solution story: e.g. a stressed business owner buried in unread chat bubbles "
+        "and missed-call notifications on one side, and a calm owner with an AI chatbot auto-"
+        "replying to happy customers on the other. Modern, clean, professional advertising "
+        "photography/illustration, strong focal point, bright commercial lighting, leave some "
+        "clean negative space at top or bottom for a headline. IMPORTANT: keep any on-image "
+        "text to at most 2-3 very short bold words, because AI image generators garble long "
+        "text; carry the real message in the caption, not the image.\n\n"
+        "Return STRICTLY valid JSON with no markdown wrapping, no code fences:\n"
         "{\n"
-        '  "caption": "Catchy text here with line breaks and relevant hashtags",\n'
-        '  "image_prompt": "Detailed description of a clean, high-quality visual matching the post"\n'
+        '  "caption": "Bangla caption with line breaks, emojis and hashtags",\n'
+        '  "image_prompt": "English ad-style problem/solution visual description"\n'
         "}"
     )
 
@@ -79,6 +109,26 @@ def log_to_google_sheets(creds_json_str: str, sheet_name: str, row_data: list):
     sheet = gc.open(sheet_name).sheet1
     sheet.append_row(row_data)
     print("Logged status to Google Sheet successfully.")
+
+
+def get_page_access_token(page_id: str, user_or_system_token: str) -> str:
+    """Exchanges a User/System-User token for the Page-specific access token.
+
+    Publishing to a Page requires a Page token. Posting with a user or system-user
+    token directly triggers the misleading '(#200) publish_actions' error, so we
+    always resolve the real Page token first.
+    """
+    url = f"https://graph.facebook.com/v19.0/{page_id}"
+    params = {"fields": "access_token", "access_token": user_or_system_token}
+    res = requests.get(url, params=params).json()
+    if "access_token" not in res:
+        raise Exception(
+            "Could not retrieve Page access token. Check that FB_PAGE_ID is correct "
+            "and the token has pages_show_list + pages_manage_posts. Response: "
+            f"{res}"
+        )
+    print("Resolved Page-specific access token.")
+    return res["access_token"]
 
 
 def post_to_facebook(page_id: str, access_token: str, caption: str, image_url: str) -> str:
@@ -155,9 +205,12 @@ def main():
         image_url = build_image_url(image_prompt)
         print(f"--- IMAGE URL ---\n{image_url}\n")
 
-        # 5. Execute Posts
-        post_to_facebook(fb_page_id, fb_access_token, caption, image_url)
-        post_to_instagram(ig_user_id, fb_access_token, caption, image_url)
+        # 5. Resolve the Page-specific token (fixes the #200 publish_actions error)
+        page_access_token = get_page_access_token(fb_page_id, fb_access_token)
+
+        # 6. Execute Posts using the Page token
+        post_to_facebook(fb_page_id, page_access_token, caption, image_url)
+        post_to_instagram(ig_user_id, page_access_token, caption, image_url)
 
         status = "Published Successfully"
 
