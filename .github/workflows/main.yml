@@ -24,6 +24,9 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
+      - name: Install Chromium for ad rendering
+        run: python -m playwright install --with-deps chromium
+
       - name: Execute Content Automation Script
         run: python agent.py
         env:
@@ -32,3 +35,9 @@ jobs:
           FB_PAGE_ID: ${{ secrets.FB_PAGE_ID }}
           FB_PAGE_ACCESS_TOKEN: ${{ secrets.FB_PAGE_ACCESS_TOKEN }}
           IG_USER_ID: ${{ secrets.IG_USER_ID }}
+          IMGBB_API_KEY: ${{ secrets.IMGBB_API_KEY }}
+          # Optional overrides:
+          # GEMINI_MODEL: gemini-3.5-flash
+          # BUSINESS_CONTEXT: "your business description"
+          # BRAND_NAME: "AI BUSINESS OS"
+          # BRAND_TAGLINE: "SMART AUTOMATION"
