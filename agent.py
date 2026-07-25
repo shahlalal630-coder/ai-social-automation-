@@ -60,14 +60,14 @@ def build_image_url(image_prompt: str) -> str:
     clean_prompt = urllib.parse.quote(image_prompt)
     seed = int(time.time())
     # 1080x1080 square format optimized for Instagram/Facebook feeds
-    return f"[https://image.pollinations.ai/prompt/](https://image.pollinations.ai/prompt/){clean_prompt}?width=1080&height=1080&nologo=true&seed={seed}"
+    return f"https://image.pollinations.ai/prompt/{clean_prompt}?width=1080&height=1080&nologo=true&seed={seed}"
 
 
 def log_to_google_sheets(creds_json_str: str, sheet_name: str, row_data: list):
     """Logs automation metadata directly to Google Sheets."""
     scopes = [
-        "[https://www.googleapis.com/auth/spreadsheets](https://www.googleapis.com/auth/spreadsheets)",
-        "[https://www.googleapis.com/auth/drive](https://www.googleapis.com/auth/drive)"
+        "https://www.googleapis.com/auth/spreadsheets",
+        "https://www.googleapis.com/auth/drive",
     ]
     creds_dict = json.loads(creds_json_str)
     credentials = Credentials.from_service_account_info(creds_dict, scopes=scopes)
@@ -80,18 +80,18 @@ def log_to_google_sheets(creds_json_str: str, sheet_name: str, row_data: list):
 
 def post_to_facebook(page_id: str, access_token: str, caption: str, image_url: str) -> str:
     """Publishes photo and caption directly to Facebook Page via Graph API."""
-    url = f"[https://graph.facebook.com/v19.0/](https://graph.facebook.com/v19.0/){page_id}/photos"
+    url = f"https://graph.facebook.com/v19.0/{page_id}/photos"
     payload = {
         "url": image_url,
         "caption": caption,
-        "access_token": access_token
+        "access_token": access_token,
     }
     response = requests.post(url, data=payload)
     res_data = response.json()
-    
+
     if "id" not in res_data:
         raise Exception(f"Facebook post failed: {res_data}")
-    
+
     print(f"Published to Facebook! Post ID: {res_data['id']}")
     return res_data["id"]
 
@@ -99,11 +99,11 @@ def post_to_facebook(page_id: str, access_token: str, caption: str, image_url: s
 def post_to_instagram(ig_user_id: str, access_token: str, caption: str, image_url: str) -> str:
     """Publishes photo and caption to Instagram Business account via Graph API."""
     # Step 1: Create Media Container
-    container_url = f"[https://graph.facebook.com/v19.0/](https://graph.facebook.com/v19.0/){ig_user_id}/media"
+    container_url = f"https://graph.facebook.com/v19.0/{ig_user_id}/media"
     container_payload = {
         "image_url": image_url,
         "caption": caption,
-        "access_token": access_token
+        "access_token": access_token,
     }
     res = requests.post(container_url, data=container_payload).json()
     if "id" not in res:
@@ -114,10 +114,10 @@ def post_to_instagram(ig_user_id: str, access_token: str, caption: str, image_ur
     time.sleep(10)
 
     # Step 2: Publish Container
-    publish_url = f"[https://graph.facebook.com/v19.0/](https://graph.facebook.com/v19.0/){ig_user_id}/media_publish"
+    publish_url = f"https://graph.facebook.com/v19.0/{ig_user_id}/media_publish"
     publish_payload = {
         "creation_id": container_id,
-        "access_token": access_token
+        "access_token": access_token,
     }
     pub_res = requests.post(publish_url, data=publish_payload).json()
     if "id" not in pub_res:
@@ -169,7 +169,7 @@ def main():
             log_to_google_sheets(
                 gspread_creds_json,
                 "Social Media Post Logs",
-                [timestamp, caption, image_url, status]
+                [timestamp, caption, image_url, status],
             )
         except Exception as sheet_err:
             print(f"Logging Error: {sheet_err}")
