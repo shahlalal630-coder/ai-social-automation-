@@ -1,10 +1,10 @@
 name: Scheduled AI Social Media Agent
 
 on:
-  workflow_dispatch: # Allows manual trigger from GitHub UI
   schedule:
-    # Runs 3 times daily at 08:00, 14:00, and 20:00 UTC
+    # Runs 3 times daily (08:00, 14:00, 20:00 UTC)
     - cron: '0 8,14,20 * * *'
+  workflow_dispatch: # Allows manual trigger from GitHub UI
 
 jobs:
   run-automation:
@@ -25,11 +25,10 @@ jobs:
           pip install -r requirements.txt
 
       - name: Execute Content Automation Script
+        run: python agent.py
         env:
-          FB_PAGE_ID: ${{ secrets.FB_PAGE_ID }}
-          IG_USER_ID: ${{ secrets.IG_USER_ID }}
-          FB_PAGE_ACCESS_TOKEN: ${{ secrets.FB_PAGE_ACCESS_TOKEN }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           GSPREAD_CREDS_JSON: ${{ secrets.GSPREAD_CREDS_JSON }}
-        run: |
-          python agent.py
+          FB_PAGE_ID: ${{ secrets.FB_PAGE_ID }}
+          FB_PAGE_ACCESS_TOKEN: ${{ secrets.FB_PAGE_ACCESS_TOKEN }}
+          IG_USER_ID: ${{ secrets.IG_USER_ID }}
