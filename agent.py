@@ -19,6 +19,9 @@ def get_env_var(var_name: str) -> str:
 
 def generate_content_with_retry(gemini_client, max_retries: int = 3):
     """Generates post caption and image prompt using Gemini API with retry logic."""
+    # Model name is configurable so future Google deprecations are a secret change,
+    # not a code edit. gemini-2.5-flash was retired for new API keys.
+    model_name = os.environ.get("GEMINI_MODEL", "gemini-3.5-flash")
     prompt = (
         "Generate a high-converting, modern social media post suitable for Instagram and Facebook.\n"
         "Return STRICTLY valid JSON with no extra markdown wrapping:\n"
@@ -32,7 +35,7 @@ def generate_content_with_retry(gemini_client, max_retries: int = 3):
         try:
             print(f"Generating AI Content (Attempt {attempt}/{max_retries})...")
             response = gemini_client.models.generate_content(
-                model="gemini-2.5-flash",
+                model=model_name,
                 contents=prompt,
             )
             text = response.text.strip()
