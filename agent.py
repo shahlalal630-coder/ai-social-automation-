@@ -13,10 +13,11 @@ from google.oauth2.service_account import Credentials
 
 
 # ----------------------------------------------------------------------------
-# Config (override any of these with GitHub secrets / env vars if you want)
+# Config (override with GitHub secrets / env vars if you want)
 # ----------------------------------------------------------------------------
 BRAND_NAME = os.environ.get("BRAND_NAME", "AI BUSINESS OS")
 BRAND_TAGLINE = os.environ.get("BRAND_TAGLINE", "SMART AUTOMATION")
+TEXT_MODEL = os.environ.get("GEMINI_MODEL", "gemini-3.5-flash")
 
 DEFAULT_BUSINESS = (
     "AI-powered customer reply automation for small and medium businesses. "
@@ -35,7 +36,6 @@ FONT_DIR = os.path.join(tempfile.gettempdir(), "ad_fonts")
 
 
 def get_env_var(var_name: str) -> str:
-    """Retrieves environment variable or raises helpful error if missing."""
     val = os.environ.get(var_name)
     if not val:
         raise ValueError(f"Missing required environment variable: {var_name}")
@@ -43,21 +43,17 @@ def get_env_var(var_name: str) -> str:
 
 
 # ----------------------------------------------------------------------------
-# 1. AI content: Gemini writes structured ad copy (English headline + Bangla body)
+# 1. AI content: structured ad copy (English headline + Bangla body + caption)
 # ----------------------------------------------------------------------------
 def generate_content_with_retry(gemini_client, max_retries: int = 3) -> dict:
-    """Generates structured ad content with Gemini. Returns a dict of ad fields."""
-    model_name = os.environ.get("GEMINI_MODEL", "gemini-3.5-flash")
     business_context = os.environ.get("BUSINESS_CONTEXT", DEFAULT_BUSINESS)
-
     prompt = (
         "You are a senior performance-marketing copywriter and ad art director. "
         "Create ONE high-CTR social media ad (Instagram + Facebook) for this business:\n"
         f"BUSINESS: {business_context}\n\n"
-        "Each time, pick a fresh angle/topic (e.g. missed night-time messages, slow replies "
-        "losing sales, festival rush, 24/7 support, saving staff cost, faster order booking) "
-        "so repeated posts feel different.\n\n"
-        "Return STRICTLY valid JSON, no markdown, no code fences, with EXACTLY these keys:\n"
+        "Pick a fresh angle each time (missed night-time messages, slow replies losing "
+        "sales, festival rush, 24/7 support, saving staff cost, faster order booking).\n\n"
+        "Return STRICTLY valid JSON, no markdown, no code fences, EXACTLY these keys:\n"
         "{\n"
         '  "english_headline": "2 to 4 punchy UPPERCASE words for the big on-image headline",\n'
         '  "bangla_subheadline": "one short Bangla line under the headline",\n'
@@ -66,35 +62,26 @@ def generate_content_with_retry(gemini_client, max_retries: int = 3) -> dict:
         '  "cta_bangla": "one short Bangla call-to-action line for the button",\n'
         '  "accent_color": "a hex color that fits the topic, e.g. #1e56ff",\n'
         '  "caption": "the FULL post caption in BANGLA: strong hook naming a real pain point, '
-        "why customer-reply automation is needed for their business, concrete benefits, a clear "
-        'Bangla call-to-action, a few emojis, and 6-8 mixed Bangla/English hashtags",\n'
+        "why customer-reply automation is needed, concrete benefits, a Bangla call-to-action, "
+        'a few emojis, and 6-8 mixed Bangla/English hashtags",\n'
         '  "image_prompt": "English description of a CLEAN, PROFESSIONAL business background '
-        "photo for the ad. Modern office / commerce / technology scene, bright, high quality. "
-        'IMPORTANT: absolutely NO text, NO letters, NO words, NO logos in the image."\n'
+        'photo. Modern office/commerce/technology. NO text, NO letters, NO words, NO logos."\n'
         "}"
     )
-
-    required = [
-        "english_headline", "bangla_subheadline", "benefits_bangla",
-        "badge_english", "cta_bangla", "accent_color", "caption", "image_prompt",
-    ]
+    required = ["english_headline", "bangla_subheadline", "benefits_bangla",
+                "badge_english", "cta_bangla", "accent_color", "caption", "image_prompt"]
 
     for attempt in range(1, max_retries + 1):
         try:
             print(f"Generating AI Content (Attempt {attempt}/{max_retries})...")
-            response = gemini_client.models.generate_content(
-                model=model_name,
-                contents=prompt,
-            )
+            response = gemini_client.models.generate_content(model=TEXT_MODEL, contents=prompt)
             text = response.text.strip()
             if text.startswith("```"):
                 text = text.split("\n", 1)[1]
                 if text.endswith("```"):
                     text = text.rsplit("```", 1)[0]
                 text = text.strip()
-
             data = json.loads(text)
-            # basic validation / defaults
             for key in required:
                 if key not in data:
                     raise ValueError(f"Model output missing key: {key}")
@@ -102,7 +89,6 @@ def generate_content_with_retry(gemini_client, max_retries: int = 3) -> dict:
                 data["benefits_bangla"] = [str(data["benefits_bangla"])]
             data["benefits_bangla"] = [str(b).strip() for b in data["benefits_bangla"] if str(b).strip()][:5]
             return data
-
         except Exception as e:
             print(f"Attempt {attempt} failed: {e}")
             if attempt < max_retries:
@@ -112,16 +98,12 @@ def generate_content_with_retry(gemini_client, max_retries: int = 3) -> dict:
 
 
 # ----------------------------------------------------------------------------
-# 2. Background image (AI, text-free) from Pollinations
+# 2. Background image (AI, text-free) + fonts
 # ----------------------------------------------------------------------------
 def build_background_url(image_prompt: str) -> str:
-    """Public HTTPS URL for a clean, text-free background image."""
     clean_prompt = urllib.parse.quote(image_prompt)
     seed = int(time.time())
-    return (
-        f"https://image.pollinations.ai/prompt/{clean_prompt}"
-        f"?width=1080&height=1080&nologo=true&seed={seed}"
-    )
+    return f"https://image.pollinations.ai/prompt/{clean_prompt}?width=1080&height=1080&nologo=true&seed={seed}"
 
 
 def fetch_bytes(url: str, timeout: int = 60) -> bytes:
@@ -130,11 +112,7 @@ def fetch_bytes(url: str, timeout: int = 60) -> bytes:
     return resp.content
 
 
-# ----------------------------------------------------------------------------
-# 3. Fonts (downloaded + cached, embedded into the HTML as base64)
-# ----------------------------------------------------------------------------
 def ensure_fonts() -> dict:
-    """Downloads the fonts once and returns {filename: base64_string}."""
     os.makedirs(FONT_DIR, exist_ok=True)
     out = {}
     for fname, url in FONT_URLS.items():
@@ -149,7 +127,7 @@ def ensure_fonts() -> dict:
 
 
 # ----------------------------------------------------------------------------
-# 4. Build the ad HTML and render it to a PNG with a headless browser
+# 3. Build ad HTML + render to PNG with headless Chromium
 # ----------------------------------------------------------------------------
 def build_ad_html(content: dict, fonts: dict, bg_data_uri: str) -> str:
     accent = content.get("accent_color", "#1e56ff")
@@ -157,10 +135,7 @@ def build_ad_html(content: dict, fonts: dict, bg_data_uri: str) -> str:
         f'<div class="b"><span class="ck">&#10003;</span><span>{b}</span></div>'
         for b in content["benefits_bangla"]
     )
-    bg_layer = (
-        f'<div class="bg" style="background-image:url({bg_data_uri})"></div>'
-        if bg_data_uri else ""
-    )
+    bg_layer = f'<div class="bg" style="background-image:url({bg_data_uri})"></div>' if bg_data_uri else ""
     return f"""<!doctype html><html><head><meta charset="utf-8"><style>
 @font-face {{font-family:Anton; src:url(data:font/ttf;base64,{fonts['Anton-Regular.ttf']});}}
 @font-face {{font-family:HS; font-weight:700; src:url(data:font/ttf;base64,{fonts['HindSiliguri-Bold.ttf']});}}
@@ -201,19 +176,16 @@ body{{width:1080px;height:1080px;overflow:hidden;font-family:HS;}}
 
 
 def render_html_to_png(html: str) -> bytes:
-    """Renders the ad HTML to a 1080x1080 PNG using headless Chromium (Playwright)."""
     from playwright.sync_api import sync_playwright
-
     with tempfile.NamedTemporaryFile("w", suffix=".html", delete=False, encoding="utf-8") as f:
         f.write(html)
         html_path = f.name
-
     try:
         with sync_playwright() as p:
             browser = p.chromium.launch(args=["--no-sandbox"])
             page = browser.new_page(viewport={"width": 1080, "height": 1080}, device_scale_factor=1)
             page.goto("file://" + html_path)
-            page.wait_for_timeout(1200)  # let fonts settle
+            page.wait_for_timeout(1200)
             png = page.screenshot(clip={"x": 0, "y": 0, "width": 1080, "height": 1080})
             browser.close()
         return png
@@ -225,10 +197,9 @@ def render_html_to_png(html: str) -> bytes:
 
 
 # ----------------------------------------------------------------------------
-# 5. Host the rendered PNG publicly (Instagram requires a public URL)
+# 4. Host publicly (Instagram requires a public URL)
 # ----------------------------------------------------------------------------
 def upload_to_imgbb(png_bytes: bytes, api_key: str) -> str:
-    """Uploads the PNG to imgbb and returns a public direct URL."""
     resp = requests.post(
         "https://api.imgbb.com/1/upload",
         params={"key": api_key},
@@ -239,26 +210,24 @@ def upload_to_imgbb(png_bytes: bytes, api_key: str) -> str:
     if not res.get("success"):
         raise Exception(f"imgbb upload failed: {res}")
     url = res["data"]["url"]
-    print(f"Uploaded ad image: {url}")
+    print(f"Uploaded designed ad image: {url}")
     return url
 
 
 def build_final_image_url(content: dict) -> str:
-    """
-    Produces the final, public image URL to post.
-    Tries the designed HTML ad (with correct Bangla text); if anything in that
-    pipeline is unavailable, falls back to the plain AI background so posting
-    still succeeds.
-    """
+    """Designed HTML ad -> imgbb URL. If ANYTHING fails, it prints a LOUD reason and
+    falls back to the plain background so a post still goes out."""
     imgbb_key = os.environ.get("IMGBB_API_KEY")
     bg_url = build_background_url(content["image_prompt"])
 
     if not imgbb_key:
-        print("IMGBB_API_KEY not set - falling back to plain background image.")
+        print("\n" + "=" * 70)
+        print("!! NO TEXT ON IMAGE BECAUSE: IMGBB_API_KEY secret is NOT set.")
+        print("!! Add it under GitHub -> Settings -> Secrets and variables -> Actions.")
+        print("=" * 70 + "\n")
         return bg_url
 
     try:
-        # embed the AI background so rendering never waits on a slow fetch
         bg_data_uri = ""
         try:
             bg_bytes = fetch_bytes(bg_url, timeout=45)
@@ -271,18 +240,21 @@ def build_final_image_url(content: dict) -> str:
         png = render_html_to_png(html)
         return upload_to_imgbb(png, imgbb_key)
     except Exception as e:
-        print(f"Ad rendering failed, falling back to plain background: {e}")
+        print("\n" + "=" * 70)
+        print("!! NO TEXT ON IMAGE BECAUSE THE AD RENDER/UPLOAD FAILED:")
+        print(f"!! {type(e).__name__}: {e}")
+        print("!! (Most common: Chromium not installed -> add the 'playwright install' "
+              "step to main.yml, and 'playwright' to requirements.txt.)")
+        print("=" * 70 + "\n")
         return bg_url
 
 
 # ----------------------------------------------------------------------------
-# 6. Google Sheets logging
+# 5. Google Sheets logging
 # ----------------------------------------------------------------------------
 def log_to_google_sheets(creds_json_str: str, sheet_name: str, row_data: list):
-    scopes = [
-        "https://www.googleapis.com/auth/spreadsheets",
-        "https://www.googleapis.com/auth/drive",
-    ]
+    scopes = ["https://www.googleapis.com/auth/spreadsheets",
+              "https://www.googleapis.com/auth/drive"]
     creds_dict = json.loads(creds_json_str)
     credentials = Credentials.from_service_account_info(creds_dict, scopes=scopes)
     gc = gspread.authorize(credentials)
@@ -292,14 +264,9 @@ def log_to_google_sheets(creds_json_str: str, sheet_name: str, row_data: list):
 
 
 # ----------------------------------------------------------------------------
-# 7. Facebook / Instagram publishing
+# 6. Facebook / Instagram publishing
 # ----------------------------------------------------------------------------
 def get_page_access_token(page_id: str, user_or_system_token: str) -> str:
-    """Exchanges a User/System-User token for the Page-specific access token.
-
-    Publishing to a Page requires a Page token. Posting with a user or system-user
-    token directly triggers the misleading '(#200) publish_actions' error.
-    """
     url = f"https://graph.facebook.com/v19.0/{page_id}"
     params = {"fields": "access_token", "access_token": user_or_system_token}
     res = requests.get(url, params=params).json()
@@ -328,11 +295,9 @@ def post_to_instagram(ig_user_id: str, access_token: str, caption: str, image_ur
     res = requests.post(container_url, data=container_payload).json()
     if "id" not in res:
         raise Exception(f"Instagram Container creation failed: {res}")
-
     container_id = res["id"]
     print(f"Instagram container created ({container_id}). Waiting for media processing...")
     time.sleep(10)
-
     publish_url = f"https://graph.facebook.com/v19.0/{ig_user_id}/media_publish"
     publish_payload = {"creation_id": container_id, "access_token": access_token}
     pub_res = requests.post(publish_url, data=publish_payload).json()
@@ -359,7 +324,6 @@ def main():
 
     try:
         gemini_client = genai.Client(api_key=gemini_api_key)
-
         content = generate_content_with_retry(gemini_client)
         caption = content["caption"]
         print(f"\n--- GENERATED CAPTION ---\n{caption}\n")
@@ -370,21 +334,15 @@ def main():
         page_access_token = get_page_access_token(fb_page_id, fb_access_token)
         post_to_facebook(fb_page_id, page_access_token, caption, image_url)
         post_to_instagram(ig_user_id, page_access_token, caption, image_url)
-
         status = "Published Successfully"
-
     except Exception as e:
         status = f"Failed: {str(e)}"
         print(f"Execution Error: {e}")
         raise e
-
     finally:
         try:
-            log_to_google_sheets(
-                gspread_creds_json,
-                "Social Media Post Logs",
-                [timestamp, caption, image_url, status],
-            )
+            log_to_google_sheets(gspread_creds_json, "Social Media Post Logs",
+                                 [timestamp, caption, image_url, status])
         except Exception as sheet_err:
             print(f"Logging Error: {sheet_err}")
 
