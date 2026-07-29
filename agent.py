@@ -17,7 +17,7 @@ from google.oauth2.service_account import Credentials
 # ----------------------------------------------------------------------------
 BRAND_NAME = os.environ.get("BRAND_NAME", "AI BUSINESS OS")
 BRAND_TAGLINE = os.environ.get("BRAND_TAGLINE", "SMART AUTOMATION")
-TEXT_MODEL = os.environ.get("GEMINI_MODEL", "gemini-3.5-flash")
+TEXT_MODEL = os.environ.get("GEMINI_MODEL", "gemini-2.5-flash")
 
 DEFAULT_BUSINESS = (
     "AI-powered customer reply automation for small and medium businesses. "
