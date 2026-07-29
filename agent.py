@@ -18,7 +18,7 @@ from google.oauth2.service_account import Credentials
 # ----------------------------------------------------------------------------
 BRAND_NAME = os.environ.get("BRAND_NAME", "AI BUSINESS OS")
 BRAND_TAGLINE = os.environ.get("BRAND_TAGLINE", "SMART AUTOMATION")
-TEXT_MODEL = os.environ.get("GEMINI_MODEL", "gemini-1.5-flash")
+TEXT_MODEL = os.environ.get("GEMINI_MODEL", "gemini-2.5-flash-lite")
 
 DEFAULT_BUSINESS = (
     "AI-powered customer reply automation for small and medium businesses. "
@@ -72,10 +72,9 @@ def generate_content_with_retry(gemini_client, max_retries: int = 3) -> dict:
     required = ["english_headline", "bangla_subheadline", "benefits_bangla",
                 "badge_english", "cta_bangla", "accent_color", "caption", "image_prompt"]
 
-    # Candidate models for automatic fallback
-    models_to_try = [TEXT_MODEL, "gemini-1.5-flash", "gemini-2.0-flash"]
-    # Remove duplicates preserving order
-    models_to_try = list(dict.fromkeys(models_to_try))
+    # Free-tier active models to test in order
+    models_to_try = [TEXT_MODEL, "gemini-2.5-flash-lite", "gemini-2.0-flash-lite", "gemini-2.0-flash"]
+    models_to_try = list(dict.fromkeys(models_to_try))  # Remove duplicates
 
     for model_name in models_to_try:
         print(f"--- Attempting generation with model: {model_name} ---")
@@ -103,14 +102,14 @@ def generate_content_with_retry(gemini_client, max_retries: int = 3) -> dict:
                 return data
 
             except errors.ClientError as e:
-                # 404/400 errors: model unavailable or invalid name. Break to try fallback model.
-                print(f"ClientError with model '{model_name}': {e.message if hasattr(e, 'message') else e}")
+                # 404 / 400 or Quota Limit 0: switch immediately to fallback model
+                print(f"ClientError/Quota limit on model '{model_name}': {e}")
                 print("Switching to next available model...")
                 break
 
             except errors.ServerError as e:
-                # 503/500 errors: server busy/congestion. Pause and retry.
-                print(f"Attempt {attempt} failed (Server Busy): {e.message if hasattr(e, 'message') else e}")
+                # 503 / 500 Server Overload: wait and retry
+                print(f"Attempt {attempt} failed (Server Busy): {e}")
                 if attempt < max_retries:
                     wait_time = attempt * 10
                     print(f"Waiting {wait_time}s before retrying...")
@@ -268,8 +267,6 @@ def build_final_image_url(content: dict) -> str:
         print("\n" + "=" * 70)
         print("!! NO TEXT ON IMAGE BECAUSE THE AD RENDER/UPLOAD FAILED:")
         print(f"!! {type(e).__name__}: {e}")
-        print("!! (Most common: Chromium not installed -> add the 'playwright install' "
-              "step to main.yml, and 'playwright' to requirements.txt.)")
         print("=" * 70 + "\n")
         return bg_url
 
@@ -281,6 +278,11 @@ def log_to_google_sheets(creds_json_str: str, sheet_name: str, row_data: list):
     scopes = ["[https://www.googleapis.com/auth/spreadsheets](https://www.googleapis.com/auth/spreadsheets)",
               "[https://www.googleapis.com/auth/drive](https://www.googleapis.com/auth/drive)"]
     creds_dict = json.loads(creds_json_str)
+    
+    # Unescape escaped newlines in private_key if passed via GitHub Secret
+    if "private_key" in creds_dict and isinstance(creds_dict["private_key"], str):
+        creds_dict["private_key"] = creds_dict["private_key"].replace("\\n", "\n")
+
     credentials = Credentials.from_service_account_info(creds_dict, scopes=scopes)
     gc = gspread.authorize(credentials)
     sheet = gc.open(sheet_name).sheet1
